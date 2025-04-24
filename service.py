@@ -46,3 +46,35 @@ def login(username: str, password: str):
 if __name__ == "__main__":
     response = login('ADMIN', 'admin123')
     print(response.message)
+
+
+
+def register(username: str, password: str, email: str):
+    current_user: User | None = session.check_session()
+    if current_user:
+        return Response(message='siz allaqachon tizimga kirgansiz', status_code=401)
+
+    get_user_by_username_query = '''
+        SELECT * FROM users WHERE username = %s;
+    '''
+    data = (username,)
+    cursor.execute(get_user_by_username_query, data)
+    user_data = cursor.fetchone()
+
+    if user_data:
+        return Response(message='foydalanuvchi topilmadi', status_code=404)
+
+    insert_user_query = '''
+        INSERT INTO users(username,password,email)
+        VALUES (%s,%s,%s);
+    '''
+    cursor.execute(insert_user_query, (username, password, email))
+    get_user_by_username_query = '''
+        SELECT * FROM users WHERE username = %s;
+    '''
+    data = (username,)
+    cursor.execute(get_user_by_username_query, data)
+    user_data = cursor.fetchone()
+    user = User.from_tuple(user_data)
+    session.add_session(user)
+    return Response(message='Tizimga muvaffaqiyatli kirildi ✅')
