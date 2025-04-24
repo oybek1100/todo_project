@@ -1,25 +1,22 @@
 from sessions import Session
 from models import User
-from utils import Response, match_password
+from utils import Response, match_password, hash_password
 from database import cursor, commit
 
 session = Session()
+
 
 @commit
 def login(username: str, password: str):
     current_user: User | None = session.check_session()
     if current_user:
-        return Response(message='siz allaqachon tizimga kirgansiz', status_code=401)
+        return Response(message='Siz allaqachon tizimga kirgansiz', status_code=401)
 
-    get_user_by_username_query = '''
-        SELECT * FROM users WHERE username = %s;
-    '''
-    data = (username,)
-    cursor.execute(get_user_by_username_query, data)
+    cursor.execute('SELECT * FROM users WHERE username = %s;', (username,))
     user_data = cursor.fetchone()
 
     if not user_data:
-        return Response(message='foydalanuvchi topilmadi', status_code=404)
+        return Response(message='Foydalanuvchi topilmadi', status_code=404)
 
     user = User.from_tuple(user_data)
 
@@ -27,54 +24,55 @@ def login(username: str, password: str):
         return Response(message="Hisob bloklangan. Iltimos, admin bilan bog'laning.", status_code=403)
 
     if not match_password(password, user.password):
-        update_login_try_count_field = '''
-            UPDATE users SET login_try_count = login_try_count + 1 WHERE id = %s;
-        '''
-        cursor.execute(update_login_try_count_field, (user.user_id,))
-        return Response(message='Pparol noto‘g‘ri', status_code=401)
+        cursor.execute(
+            'UPDATE users SET login_try_count = login_try_count + 1 WHERE id = %s;',
+            (user.user_id,)
+        )
+        return Response(message='Parol noto‘g‘ri', status_code=401)
 
-
-    reset_login_try_count = '''
-        UPDATE users SET login_try_count = 0 WHERE id = %s;
-    '''
-    cursor.execute(reset_login_try_count, (user.user_id,))
+  
+    cursor.execute(
+        'UPDATE users SET login_try_count = 0 WHERE id = %s;',
+        (user.user_id,)
+    )
 
     session.add_session(user)
-    return Response(message='Tizimga muvaffaqiyatli kirildi ✅')
+    return Response(message='Tizimga muvaffaqiyatli kirildi ✅', status_code=200)
+
+
+@commit
+def register(username: str, password: str, email: str):
+    current_user: User | None = session.check_session()
+    if current_user:
+        return Response(message='Siz allaqachon tizimga kirgansiz', status_code=401)
+
+    
+    cursor.execute('SELECT * FROM users WHERE username = %s;', (username,))
+    if cursor.fetchone():
+        return Response(message='Bu foydalanuvchi allaqachon mavjud', status_code=400)
+
+
+    cursor.execute('SELECT * FROM users WHERE email = %s;', (email,))
+    if cursor.fetchone():
+        return Response(message='Bu email allaqachon ishlatilgan', status_code=400)
+
+    hashed_password = hash_password(password)
+
+
+    cursor.execute('''
+        INSERT INTO users (username, password, email)
+        VALUES (%s, %s, %s)
+        RETURNING *;
+    ''', (username, hashed_password, email))
+
+    user_data = cursor.fetchone()
+    user = User.from_tuple(user_data)
+
+    session.add_session(user)
+    return Response(message='Tizimga muvaffaqiyatli kirildi ✅', status_code=200)
+
 
 
 if __name__ == "__main__":
     response = login('ADMIN', 'admin123')
     print(response.message)
-
-
-
-def register(username: str, password: str, email: str):
-    current_user: User | None = session.check_session()
-    if current_user:
-        return Response(message='siz allaqachon tizimga kirgansiz', status_code=401)
-
-    get_user_by_username_query = '''
-        SELECT * FROM users WHERE username = %s;
-    '''
-    data = (username,)
-    cursor.execute(get_user_by_username_query, data)
-    user_data = cursor.fetchone()
-
-    if user_data:
-        return Response(message='foydalanuvchi topilmadi', status_code=404)
-
-    insert_user_query = '''
-        INSERT INTO users(username,password,email)
-        VALUES (%s,%s,%s);
-    '''
-    cursor.execute(insert_user_query, (username, password, email))
-    get_user_by_username_query = '''
-        SELECT * FROM users WHERE username = %s;
-    '''
-    data = (username,)
-    cursor.execute(get_user_by_username_query, data)
-    user_data = cursor.fetchone()
-    user = User.from_tuple(user_data)
-    session.add_session(user)
-    return Response(message='Tizimga muvaffaqiyatli kirildi ✅')
